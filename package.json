@@ -1,0 +1,22 @@
+{
+  "name": "mongo-menu-export",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Import one Gedemin menu document from Firebird into MongoDB (POS)",
+  "bin": {
+    "import-menu": "./src/cli/import-menu.js"
+  },
+  "main": "./src/import-menu-entry.js",
+  "scripts": {
+    "import-menu": "node ./src/cli/import-menu.js",
+    "test:fb": "node ./scripts/test-firebird-connect.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "mongodb": "^6.16.0",
+    "node-firebird": "^2.3.0"
+  }
+}
