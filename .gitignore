@@ -1,6 +1,8 @@
 node_modules/
+gedemin/
 .env
 .env.*
 !.env.example
 *.log
 import-menu.result.json
+export-halls.result.json

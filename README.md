@@ -52,13 +52,33 @@ $env:MENU_DOCUMENT_KEY = "12345"; npm run import-menu
 
 После `npm install -g .` можно вызывать бинарник `import-menu` (если настроен путь к глобальным пакетам).
 
+## Export halls and tables (full sync)
+
+Экспорт **всех** залов (только с картой в `USR$FRONT_MAP`) и столов в `pos-restaurantHall` / `pos-restaurantTable`. Параметров ID нет.
+
+```powershell
+.\export-halls.cmd
+```
+
+или:
+
+```powershell
+node .\src\cli\export-halls-tables.js
+npm run export-halls
+```
+
+Результат: `export-halls.result.json` в текущей папке.
+
 ## Notes
 
 - В этой базе строки меню связаны с шапкой через `USR$MN_MENULINE.MASTERKEY = <menuDocumentKey>`.
 - Коллекции по умолчанию создаются с дефисами: `pos-priceList`, `pos-priceListLine`, `pos-priceListType`, `Good`, `GoodGroup`… Если нужно другое — задайте `COL_*` в `.env`.
 
-## Gedemin launcher
+## Gedemin
 
-Place `launcher.vbs` where Gedemin macros can reference it (or paste into Gedemin macro).
+Макросы и include хранятся в проекте Gedemin (не в этом git-репозитории). Вызовы:
 
-Edit launcher paths: path to `node.exe`, folder of this package, optionally pass overrides as arguments (`--mongoUri`, `--mongoDb`, `--fb*`).
+- `waiter_LaunchMongoMenuExport(menuDocumentKey)` — меню
+- `waiter_LaunchMongoMenuExportHalls()` — залы и столы
+
+Параметры подключения — в `waiter_Options`; Firebird host/port/db — из `IBLogin.DatabaseName` через `ParseFbConn`.

@@ -9,6 +9,7 @@
   "main": "./src/import-menu-entry.js",
   "scripts": {
     "import-menu": "node ./src/cli/import-menu.js",
+    "export-halls": "node ./src/cli/export-halls-tables.js",
     "test:fb": "node ./scripts/test-firebird-connect.js"
   },
   "engines": {

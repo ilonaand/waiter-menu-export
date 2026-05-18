@@ -2,25 +2,15 @@
  * One-menu import: Firebird (Gedemin) → MongoDB per PROMPT_firebird_menu_to_mongo.md
  */
 
-const path = require('path');
-const Firebird = require('node-firebird');
 const { MongoClient, ObjectId } = require('mongodb');
 const { firebirdAttachOptionsFromEnv } = require('./firebirdAttachOptions');
-
-function tryLoadDotenv() {
-  try {
-    require('dotenv').config({
-      path: path.join(__dirname, '..', '..', '.env'),
-      override: true,
-    });
-  } catch (_) {}
-}
-
-function num(val, def = 0) {
-  if (val == null || val === '') return def;
-  const n = Number(val);
-  return Number.isFinite(n) ? n : def;
-}
+const {
+  tryLoadDotenv,
+  num,
+  query,
+  attachFirebird,
+  mongoClientOptionsFromEnv,
+} = require('./firebirdUtil');
 
 function bool01(val) {
   return num(val, 0) === 1;
@@ -49,24 +39,6 @@ function roundCostToCents(costRub) {
   } else x = Number(costRub);
   if (!Number.isFinite(x)) return 0;
   return Math.round(x * 100);
-}
-
-function query(db, sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.query(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows || []);
-    });
-  });
-}
-
-function attachFirebird(opts) {
-  return new Promise((resolve, reject) => {
-    Firebird.attach(opts, (err, db) => {
-      if (err) reject(err);
-      else resolve(db);
-    });
-  });
 }
 
 function fbGroupCode(alias, id) {
@@ -125,10 +97,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
   const COL_PRICE_LIST = env.COL_PRICE_LIST || 'pos-priceList';
   const COL_PRICE_LIST_LINE = env.COL_PRICE_LIST_LINE || 'pos-priceListLine';
 
-  const mongoOptions = {
-    socketTimeoutMS: parseInt(env.MONGO_SOCKET_TIMEOUT_MS || '300000', 10),
-    serverSelectionTimeoutMS: parseInt(env.MONGO_SERVER_SELECTION_TIMEOUT_MS || '30000', 10),
-  };
+  const mongoOptions = mongoClientOptionsFromEnv(env);
 
   const now = new Date();
   const stats = {
