@@ -7,7 +7,7 @@ Sub Macros147022951_589124946
 ' pkgDir из Gedemin). Папка PKG_DIR содержит .env со строками подключения.
 ' Дополнительно можно передать Firebird/Mongo параметрами подстановки Gedemin —
 ' они перекроют переменные окружения из .env.
-' Результат: import-menu.result.json в PKG_DIR.
+' Результат: export-menu.result.json в PKG_DIR.
 ' -----------------------------------------------------------------------------
 
   Dim NODE_EXE_DEFAULT  ' Пример: "C:\Program Files\nodejs\node.exe"
@@ -27,9 +27,9 @@ end sub
 
 function MN_LaunchMongoMenuImport(ByVal menuDocumentKey, ByVal nodeExe, ByVal pkgDir, ByVal fbHost, ByVal fbPort, ByVal fbDb, ByVal fbUser, ByVal fbPass, ByVal fbCharset, ByVal mongoUri, ByVal mongoDb)
     Dim IMPORT_CLI_REL       ' Пример: "src\cli\import-menu.js"
-    Dim RESULT_FILENAME      ' Пример: "import-menu.result.json"
+    Dim RESULT_FILENAME      ' Пример: "export-menu.result.json"
     IMPORT_CLI_REL = "src\cli\import-menu.js"
-    RESULT_FILENAME = "import-menu.result.json"
+    RESULT_FILENAME = "export-menu.result.json"
     Dim sh, exe, root, cli, rp, ec, txt, cmdln
 
     Dim pDir: pDir = Nz(pkgDir)
@@ -49,7 +49,7 @@ function MN_LaunchMongoMenuImport(ByVal menuDocumentKey, ByVal nodeExe, ByVal pk
     End If
 
     If Len(Nz(IMPORT_CLI_REL)) = 0 Then IMPORT_CLI_REL = "src\cli\import-menu.js"
-    If Len(Nz(RESULT_FILENAME)) = 0 Then RESULT_FILENAME = "import-menu.result.json"
+    If Len(Nz(RESULT_FILENAME)) = 0 Then RESULT_FILENAME = "export-menu.result.json"
 
     root = NormalizeFolder(pDir)
     cli = BuildPathSafe(root, IMPORT_CLI_REL)

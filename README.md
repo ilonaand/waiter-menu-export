@@ -52,6 +52,8 @@ $env:MENU_DOCUMENT_KEY = "12345"; npm run import-menu
 
 После `npm install -g .` можно вызывать бинарник `import-menu` (если настроен путь к глобальным пакетам).
 
+Результат: `export-menu.result.json` в текущей папке.
+
 ## Export halls and tables (full sync)
 
 Экспорт **всех** залов (только с картой в `USR$FRONT_MAP`) и столов в `pos-restaurantHall` / `pos-restaurantTable`. Параметров ID нет.

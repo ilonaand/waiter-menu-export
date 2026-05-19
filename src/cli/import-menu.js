@@ -49,7 +49,7 @@ async function main() {
   /** @type {string} */
   let resultPath = cli.resultFile
     ? path.resolve(cli.resultFile)
-    : path.join(process.cwd(), 'import-menu.result.json');
+    : path.join(process.cwd(), 'export-menu.result.json');
 
   const posId = cli.positional.find((a) => /^\d+$/.test(a));
   const menuDocumentKey =

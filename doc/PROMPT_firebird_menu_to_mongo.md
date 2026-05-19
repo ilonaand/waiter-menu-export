@@ -265,7 +265,7 @@
 
 ### Как передавать результат обратно в Gedemin
 Один из стабильных способов:
-- Node пишет файл результата (например `import-menu.result.json`) с полями:
+- Node пишет файл результата (например `export-menu.result.json`) с полями:
   - `ok`, `counts`, `errors[]`, `startedAt`, `finishedAt`
 - VBScript после завершения процесса читает этот файл и показывает summary.
 

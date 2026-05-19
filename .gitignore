@@ -4,5 +4,5 @@ gedemin/
 .env.*
 !.env.example
 *.log
-import-menu.result.json
+export-menu.result.json
 export-halls.result.json
