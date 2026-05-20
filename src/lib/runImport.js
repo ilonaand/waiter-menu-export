@@ -222,7 +222,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
 
     // --- Lines
     const lineSql = `
-      SELECT USR$GOODKEY, USR$COST, USR$QUANTITY, USR$SORTNUMBER
+      SELECT DOCUMENTKEY, USR$GOODKEY, USR$COST, USR$QUANTITY, USR$SORTNUMBER
       FROM USR$MN_MENULINE
       WHERE MASTERKEY = ?
       ORDER BY COALESCE(USR$SORTNUMBER, 0)
@@ -487,13 +487,15 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
       stats.membershipUpserts += 1;
     }
 
-    // --- priceList upsert по детерминированному имени (`Меню <DOCUMENT.ID>`)
-    const plFilter = { name: priceListName };
+    // --- priceList upsert по internalCode (= GD_DOCUMENT.ID), name может меняться в Gedemin
+    const priceListInternalCode = internalCodeFromFbId(docId);
+    const plFilter = { internalCode: priceListInternalCode };
     await colPl.findOneAndUpdate(
       plFilter,
       {
         $set: {
           name: priceListName,
+          internalCode: priceListInternalCode,
           priceListTypeId,
           fromDate: fromDateStr,
           toDate: toDateStr,
@@ -511,7 +513,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
     );
     const plFresh = await colPl.findOne(plFilter);
     if (!plFresh || !plFresh._id) {
-      throw new Error(`Failed to upsert price list (${priceListName})`);
+      throw new Error(`Failed to upsert price list internalCode=${priceListInternalCode}`);
     }
     const priceListId = plFresh._id;
 
@@ -521,6 +523,11 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
 
     const bulkLines = [];
     for (const L of lines) {
+      const lineKey = L.DOCUMENTKEY;
+      if (lineKey == null) {
+        stats.warnings.push('Menu line without DOCUMENTKEY (skipped)');
+        continue;
+      }
       const gk = L['USR$GOODKEY'];
       if (gk == null) continue;
       const gid = Number(gk);
@@ -532,6 +539,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
       bulkLines.push({
         priceListId,
         goodId: goodOid,
+        internalCode: internalCodeFromFbId(lineKey),
         price: roundCostToCents(L['USR$COST']),
         quantity: num(L['USR$QUANTITY'], 0),
         disabled: false,
@@ -549,6 +557,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
       menuDocumentKey: menuKey,
       priceListId: String(priceListId),
       priceListName,
+      priceListInternalCode,
       stats,
       logged: { menuname, depotName, docNumber: docNumber != null ? String(docNumber) : null },
     };
