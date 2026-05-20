@@ -45,10 +45,16 @@ function mongoClientOptionsFromEnv(env) {
   };
 }
 
+/** Firebird ID → `internalCode` (строка, не число). */
+function internalCodeFromFbId(fbId) {
+  return String(fbId);
+}
+
 module.exports = {
   tryLoadDotenv,
   num,
   query,
   attachFirebird,
   mongoClientOptionsFromEnv,
+  internalCodeFromFbId,
 };

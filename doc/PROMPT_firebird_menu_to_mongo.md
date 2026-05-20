@@ -17,7 +17,7 @@
 - **Меню в Firebird уже создано** существующим импортом (например, макросом из `MenuImportXML.vbs` и логикой из `mn-import.vbs`). Повторять разбор XML не нужно.
 - **Схема Mongo** и ожидаемые поля ориентируйся на:
   - `waiter\44.md` (сущности `sys-ref:Good`, `sys-ref:GoodGroup`, `sys-ref:GoodGroupMembership`, `sys-ref:Unit`, `sys-ref:GroupHierarchy`, `pos:priceList`, `pos:priceListLine`, `pos:priceListType`)
-  - реальные примеры документов, которые показал заказчик (там есть `__fbId`, `internalCode`, `price` в копейках и т.п.).
+  - реальные примеры документов, которые показал заказчик (там есть `internalCode`, `price` в копейках и т.п.).
 - **Важно про имена коллекций в этом проекте**: по умолчанию коллекции называются **с дефисами**, а не как “namespace:name” из `44.md`:
   - `sys-ref:Good` → `Good`
   - `sys-ref:GoodGroup` → `GoodGroup`
@@ -116,7 +116,7 @@
   - `code`: строковый код группы (см. правила ниже)
   - `name`: из Firebird
   - `parentId`, `ancestors`, `depth`: строятся по `GD_GOODGROUP.PARENT` (в вашем кейсе “корень + группы”, глубина 0/1)
-  - `__fbId`: `GD_GOODGROUP.ID` (как в примерах)
+  - `internalCode`: `CStr(GD_GOODGROUP.ID)` (строка, внешний id Gedemin)
 
 ### D) `sys-ref:Good`
 - Товары, которые встречаются в `USR$MN_MENULINE` выбранного меню
@@ -132,7 +132,7 @@
     - `isFractional`: **в этом проекте фиксируем `false`** (в вашей базе это поле сейчас равно 0)
     - `GTIN` можно брать из `GD_GOOD.USR$GTIN` (если у вас это поле используется)
     - и т.д.
-  - `__fbId` можно хранить как число = `GD_GOOD.ID` (как в примере), но при наличии `internalCode` это дублирование допустимо
+  - `internalCode`: `CStr(GD_GOOD.ID)` (строка; поле `__fbId` не используется)
 
 ### E) `sys-ref:GoodGroupMembership`
 - Связь товар↔группа в рамках `hierarchyId="menu"`
@@ -142,7 +142,7 @@
   - `hierarchyId`: ObjectId иерархии
   - `ancestorGroupIds`: массив ObjectId предков (в вашем кейсе обычно `[rootGroupId]` или пусто)
   - `isPrimary = true`
-- `__fbId` у membership **нет источника** (в Firebird отдельной таблицы membership нет), не заполнять.
+- `internalCode` у membership **нет источника** (в Firebird отдельной таблицы membership нет), не заполнять.
 
 ### F) `pos:priceListType`
 - Так как `pos:priceList.priceListTypeId` обязателен, создаём/находим тип:

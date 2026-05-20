@@ -10,6 +10,7 @@ const {
   query,
   attachFirebird,
   mongoClientOptionsFromEnv,
+  internalCodeFromFbId,
 } = require('./firebirdUtil');
 
 function positiveNum(val) {
@@ -101,8 +102,10 @@ async function runExportHallsTables({ overrides = {} } = {}) {
     const colTable = db.collection(COL_TABLE);
 
     const hallRows = await query(fbDb, HALLS_SQL);
+    const tableRows = await query(fbDb, TABLES_SQL);
+
     const hallMongoIdByFbId = new Map();
-    const fbHallIds = [];
+    const hallInternalCodesExported = [];
 
     for (const row of hallRows) {
       const hallFbId = num(row.HALL_ID, NaN);
@@ -124,14 +127,16 @@ async function runExportHallsTables({ overrides = {} } = {}) {
         continue;
       }
 
+      const internalCode = internalCodeFromFbId(hallFbId);
+
       await colHall.findOneAndUpdate(
-        { __fbId: hallFbId },
+        { internalCode },
         {
           $set: {
             name,
             canvasWidth,
             canvasHeight,
-            __fbId: hallFbId,
+            internalCode,
             updatedAt: now,
           },
           $setOnInsert: { createdAt: now },
@@ -139,19 +144,18 @@ async function runExportHallsTables({ overrides = {} } = {}) {
         { upsert: true }
       );
 
-      const fresh = await colHall.findOne({ __fbId: hallFbId });
+      const fresh = await colHall.findOne({ internalCode });
       if (!fresh || !fresh._id) {
         stats.warnings.push(`Hall ${hallFbId}: upsert failed`);
         continue;
       }
 
       hallMongoIdByFbId.set(hallFbId, fresh._id);
-      fbHallIds.push(hallFbId);
+      hallInternalCodesExported.push(internalCode);
       stats.hallsUpserted += 1;
     }
 
-    const tableRows = await query(fbDb, TABLES_SQL);
-    const fbTableIds = [];
+    const tableInternalCodesExported = [];
     const seenNumberByHall = new Map();
 
     for (const row of tableRows) {
@@ -206,6 +210,7 @@ async function runExportHallsTables({ overrides = {} } = {}) {
       }
 
       const colorCode = optionalStr(row.USR$COLORTABLE);
+      const internalCode = internalCodeFromFbId(tableFbId);
 
       /** @type {Record<string, unknown>} */
       const setDoc = {
@@ -217,13 +222,13 @@ async function runExportHallsTables({ overrides = {} } = {}) {
         width,
         height,
         maxPersonCount,
-        __fbId: tableFbId,
+        internalCode,
         updatedAt: now,
       };
       if (colorCode) setDoc.colorCode = colorCode;
 
       await colTable.findOneAndUpdate(
-        { __fbId: tableFbId },
+        { internalCode },
         {
           $set: setDoc,
           $setOnInsert: { createdAt: now },
@@ -231,20 +236,24 @@ async function runExportHallsTables({ overrides = {} } = {}) {
         { upsert: true }
       );
 
-      fbTableIds.push(tableFbId);
+      tableInternalCodesExported.push(internalCode);
       stats.tablesUpserted += 1;
     }
 
-    if (fbTableIds.length) {
-      const delTables = await colTable.deleteMany({ __fbId: { $nin: fbTableIds } });
+    if (tableInternalCodesExported.length) {
+      const delTables = await colTable.deleteMany({
+        internalCode: { $nin: tableInternalCodesExported },
+      });
       stats.tablesDeleted = delTables.deletedCount || 0;
     } else {
       const delTables = await colTable.deleteMany({});
       stats.tablesDeleted = delTables.deletedCount || 0;
     }
 
-    if (fbHallIds.length) {
-      const delHalls = await colHall.deleteMany({ __fbId: { $nin: fbHallIds } });
+    if (hallInternalCodesExported.length) {
+      const delHalls = await colHall.deleteMany({
+        internalCode: { $nin: hallInternalCodesExported },
+      });
       stats.hallsDeleted = delHalls.deletedCount || 0;
     } else {
       const delHalls = await colHall.deleteMany({});
@@ -254,8 +263,8 @@ async function runExportHallsTables({ overrides = {} } = {}) {
     return {
       ok: true,
       stats,
-      hallsInFirebird: fbHallIds.length,
-      tablesInFirebird: fbTableIds.length,
+      hallsInFirebird: hallInternalCodesExported.length,
+      tablesInFirebird: tableInternalCodesExported.length,
     };
   } finally {
     try {

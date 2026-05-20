@@ -10,6 +10,7 @@ const {
   query,
   attachFirebird,
   mongoClientOptionsFromEnv,
+  internalCodeFromFbId,
 } = require('./firebirdUtil');
 
 function bool01(val) {
@@ -241,10 +242,10 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
     const goodsById = new Map();
     if (goodIdListSql) {
       const goodSql = `
-        SELECT ID, NAME, ALIAS, BARCODE, GROUPKEY, ISASSEMBLY,
-               USR$BEDIVIDE, USR$GTIN, DISABLED
-        FROM GD_GOOD
-        WHERE ID IN (${goodIdListSql})
+        SELECT g.ID, g.NAME, g.ALIAS, g.BARCODE, g.GROUPKEY, g.ISASSEMBLY,
+               g.USR$BEDIVIDE, g.USR$GTIN, g.DISABLED
+        FROM GD_GOOD g
+        WHERE g.ID IN (${goodIdListSql})
       `;
       const gRows = await query(fbDb, goodSql);
       for (const g of gRows) goodsById.set(Number(g.ID), g);
@@ -263,7 +264,9 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
       if (!list) break;
       const ggrRows = await query(
         fbDb,
-        `SELECT ID, PARENT, NAME, ALIAS, DISABLED FROM GD_GOODGROUP WHERE ID IN (${list})`
+        `SELECT gg.ID, gg.PARENT, gg.NAME, gg.ALIAS, gg.DISABLED
+         FROM GD_GOODGROUP gg
+         WHERE gg.ID IN (${list})`
       );
       for (const r of ggrRows) {
         const id = Number(r.ID);
@@ -287,6 +290,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
 
     async function upsertGoodGroupFbRow(fbRow, needSynthetic, syntheticRootId) {
       const fbId = Number(fbRow.ID);
+      const internalCode = internalCodeFromFbId(fbId);
       const code = fbGroupCode(fbRow.ALIAS, fbId);
       const title = (fbRow.NAME && String(fbRow.NAME).trim()) || `Группа ${fbId}`;
       const disabled = bool01(fbRow.DISABLED);
@@ -334,7 +338,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
             ancestors,
             depth: depthVal,
             disabled,
-            __fbId: fbId,
+            internalCode,
             updatedAt: now,
           },
           $setOnInsert: { createdAt: now },
@@ -418,7 +422,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
     const goodObjectIdByFbId = new Map();
     for (const [, g] of goodsById) {
       const gid = Number(g.ID);
-      const internalCode = String(gid);
+      const internalCode = internalCodeFromFbId(gid);
       const alias = g.ALIAS != null ? String(g.ALIAS).trim().slice(0, 16) : '';
       const barcode = g.BARCODE != null && String(g.BARCODE).trim() !== '' ? String(g.BARCODE).trim() : undefined;
 
@@ -434,11 +438,11 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
             // В этой схеме признак дробного/весового товара не используем (всегда 0)
             isFractional: false,
             ...(g['USR$GTIN'] ? { GTIN: String(g['USR$GTIN']) } : {}),
-            __fbId: gid,
+            internalCode,
             disabled: bool01(g.DISABLED),
             updatedAt: now,
           },
-          $setOnInsert: { internalCode, createdAt: now },
+          $setOnInsert: { createdAt: now },
         },
         { upsert: true }
       );
@@ -522,7 +526,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
       const gid = Number(gk);
       const goodOid = goodObjectIdByFbId.get(gid);
       if (!goodOid) {
-        stats.warnings.push(`Line skipped: Good ID ${gk} missing in GD_GOOD`);
+        stats.warnings.push(`Line skipped: Good ID ${gk} — no Mongo good`);
         continue;
       }
       bulkLines.push({
