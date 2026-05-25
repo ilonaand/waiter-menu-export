@@ -38,6 +38,7 @@ function menuOverridesFromCli(cli) {
   put('COL_PRICE_LIST_TYPE', cli.colPriceListType);
   put('COL_PRICE_LIST', cli.colPriceList);
   put('COL_PRICE_LIST_LINE', cli.colPriceListLine);
+  put('COL_SERVICE_POINT', cli.colServicePoint);
 
   return o;
 }

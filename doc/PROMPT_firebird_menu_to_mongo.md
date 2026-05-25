@@ -33,7 +33,7 @@
   - `USR$MN_MENULINE` (строки меню; **связка с шапкой через `MASTERKEY`**, `USR$GOODKEY`, `USR$COST`, `USR$QUANTITY`…)
   - `GD_GOOD` (товар; `ID`, `NAME`, `ALIAS`, `BARCODE`, `GROUPKEY`, `VALUEKEY`, флаги `USR$BEDIVIDE` и т.п.)
   - `GD_GOODGROUP` (группа; `ID`, `NAME`, `ALIAS`, `PARENT`, `LB/RB`…)
-  - `GD_VALUE` (единица; но в нашем кейсе фактически нужна только “шт”)
+  - `GD_VALUE` (единицы измерения)
   - `USR$MN_MENUNAME` (справочник названий меню, `USR$NAME`) — используется для названия `priceList`
   - `GD_CONTACT` (подразделение/точка, `NAME`, `ADDRESS`) — при необходимости включать в name меню/лог
 
@@ -70,6 +70,7 @@
 - `COL_PRICE_LIST_TYPE`
 - `COL_PRICE_LIST`
 - `COL_PRICE_LIST_LINE`
+- `COL_SERVICE_POINT` (default `pos-servicePoint`)
 
 ### Подключение dotenv (рекомендация)
 Рекомендуемое поведение:
@@ -99,9 +100,18 @@
 Минимальный набор для меню и справочников:
 
 ### A) `sys-ref:Unit`
-- В Mongo должна быть единица измерения **`name = "шт"`**
-- Все товары в этом импорте получают `unitId` именно этой записи.
-- Если записи “шт” нет — создать.
+- Источник: **все строки `GD_VALUE`** (`SELECT NAME, ID FROM GD_VALUE`).
+- **`internalCode` = `CStr(GD_VALUE.ID)`** (например `"3000001"`).
+- **`name`** = `GD_VALUE.NAME` (как в Gedemin).
+- Товар: **`unitId`** по `GD_GOOD.VALUEKEY` → `GD_VALUE.ID`; если `VALUEKEY` пустой или не найден — fallback **`3000001`** (шт).
+
+### A2) `pos:servicePoint`
+- Источник: **`GD_OURCOMPANY` → `GD_CONTACT`** (`COMPANYKEY`):
+  - `SELECT FIRST 1 C.ID, C.NAME FROM GD_OURCOMPANY B JOIN GD_CONTACT C ON C.ID = B.COMPANYKEY`
+- **`internalCode` = `CStr(GD_CONTACT.ID)`**
+- **`name`** = `GD_CONTACT.NAME`
+- **`type`** = `"restaurant"` (фиксировано)
+- Upsert по `internalCode`; коллекция по умолчанию `pos-servicePoint` (`COL_SERVICE_POINT`).
 
 ### B) `sys-ref:GroupHierarchy`
 - Создать/найти иерархию групп для меню:
@@ -126,7 +136,7 @@
   - `name` = `GD_GOOD.NAME`
   - `alias` = `GD_GOOD.ALIAS` (не ключ, но полезно)
   - `barcode` = `GD_GOOD.BARCODE` (если не пусто)
-  - `unitId` = ObjectId единицы `"шт"`
+  - `unitId` = ObjectId по `GD_GOOD.VALUEKEY` (иначе шт, `3000001`)
   - `isAssembly` = `GD_GOOD.ISASSEMBLY` (если переносите)
   - POS-расширения из `44.md` при необходимости:
     - `isFractional`: **в этом проекте фиксируем `false`** (в вашей базе это поле сейчас равно 0)
@@ -179,7 +189,7 @@
 
 Рекомендуемые ключи для поиска/апсерта:
 
-- `sys-ref:Unit`: по `name = "шт"`
+- `sys-ref:Unit`: по `internalCode = CStr(GD_VALUE.ID)` (например `"3000001"`)
 - `sys-ref:GroupHierarchy`: по `code = "menu"`
 - `pos:priceListType`: по `name = "menu"`
 
@@ -311,6 +321,7 @@ Node должен работать с коллекциями по именам, 
 - `pos-priceListType`
 - `pos-priceList`
 - `pos-priceListLine`
+- `pos-servicePoint`
 
 ### Upsert-паттерн
 - Для справочников использовать `findOneAndUpdate(..., { upsert: true, returnDocument: "after" })`, чтобы **получить `_id`** сразу.
@@ -358,7 +369,7 @@ Node должен работать с коллекциями по именам, 
   - `ID`, `NAME`, `ALIAS`, `PARENT`, `DISABLED` …
 
 Юниты:
-- В этом проекте допускается упрощение: всегда использовать `Unit(name="шт")` и **не читать `GD_VALUE`** (так как “в нашем случае будет только одна единица измерения шт”).
+- Единицы: **весь справочник `GD_VALUE`**; у товара — `VALUEKEY`, fallback `3000001`.
 
 ---
 
@@ -367,7 +378,7 @@ Node должен работать с коллекциями по именам, 
 1) **VBScript (Gedemin)** получает `menuDocumentKey` (ID текущего документа меню) и вызывает `node.exe import-menu.js ...`.
 2) **Node.js** подключается к Firebird (Gedemin DB) и читает исходные данные по `menuDocumentKey`.
 3) **Node.js** подключается к MongoDB и обеспечивает справочники:
-   - Upsert `sys-ref:Unit` (`name="шт"`) → получить `unitId`
+   - Upsert всех `sys-ref:Unit` из `GD_VALUE` → карта `VALUEKEY` → `unitId`
    - Upsert `sys-ref:GroupHierarchy` (`code="menu"`) → получить `hierarchyId`
    - Upsert `pos:priceListType` (`name="menu"`) → получить `priceListTypeId`
 
@@ -391,7 +402,7 @@ Node должен работать с коллекциями по именам, 
 
 8) Upsert `sys-ref:Good`:
    - key: `internalCode = CStr(GD_GOOD.ID)`
-   - проставить `unitId` (шт)
+   - проставить `unitId` по `GD_GOOD.VALUEKEY`
    - остальные поля по правилам выше
 
 9) Upsert `sys-ref:GoodGroupMembership`:

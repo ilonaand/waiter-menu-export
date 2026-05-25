@@ -66,6 +66,83 @@ function sqlIntList(ids) {
   return uniq.join(',');
 }
 
+/** «шт» в типовой базе Gedemin — fallback, если у товара нет VALUEKEY. */
+const DEFAULT_UNIT_FB_ID = 3000001;
+
+/** Все единицы из GD_VALUE → Unit (internalCode = CStr(ID)). */
+async function importAllUnits(fbDb, colUnit, now) {
+  const rows = await query(fbDb, 'SELECT NAME, ID FROM GD_VALUE ORDER BY ID');
+  const unitObjectIdByFbId = new Map();
+  let unitUpserts = 0;
+
+  for (const row of rows) {
+    const fbId = Number(row.ID);
+    if (!isPosInt(fbId)) continue;
+    const internalCode = internalCodeFromFbId(fbId);
+    const name = String(row.NAME || '').trim() || `unit:${fbId}`;
+
+    await colUnit.findOneAndUpdate(
+      { internalCode },
+      {
+        $set: { name, internalCode, updatedAt: now },
+        $setOnInsert: {
+          createdAt: now,
+          createdBy: new ObjectId('000000000000000000000000'),
+          updatedBy: new ObjectId('000000000000000000000000'),
+        },
+      },
+      { upsert: true }
+    );
+    const fresh = await colUnit.findOne({ internalCode });
+    if (fresh) unitObjectIdByFbId.set(fbId, fresh._id);
+    unitUpserts += 1;
+  }
+
+  if (!unitObjectIdByFbId.has(DEFAULT_UNIT_FB_ID)) {
+    throw new Error(`GD_VALUE default unit not found: ID=${DEFAULT_UNIT_FB_ID}`);
+  }
+
+  return { unitObjectIdByFbId, unitUpserts };
+}
+
+/** Наша организация (GD_OURCOMPANY → GD_CONTACT) → pos:servicePoint type=restaurant. */
+async function importRestaurantServicePoint(fbDb, colServicePoint, now) {
+  const rows = await query(
+    fbDb,
+    `SELECT FIRST 1 C.ID, C.NAME
+     FROM GD_OURCOMPANY B
+     JOIN GD_CONTACT C ON C.ID = B.COMPANYKEY`
+  );
+  if (!rows.length) {
+    throw new Error('servicePoint not found: GD_OURCOMPANY / GD_CONTACT');
+  }
+
+  const fbId = Number(rows[0].ID);
+  if (!isPosInt(fbId)) throw new Error('servicePoint: invalid GD_CONTACT.ID');
+  const name = String(rows[0].NAME || '').trim();
+  if (!name) throw new Error(`servicePoint ${fbId}: empty name`);
+
+  const internalCode = internalCodeFromFbId(fbId);
+  await colServicePoint.findOneAndUpdate(
+    { internalCode },
+    {
+      $set: {
+        name,
+        type: 'restaurant',
+        internalCode,
+        disabled: false,
+        updatedAt: now,
+      },
+      $setOnInsert: { createdAt: now },
+    },
+    { upsert: true }
+  );
+  const fresh = await colServicePoint.findOne({ internalCode });
+  if (!fresh) throw new Error(`Failed to upsert servicePoint internalCode=${internalCode}`);
+
+  return { servicePointId: fresh._id, internalCode, name };
+}
+
 /**
  * @param {object} options
  * @param {string|number} options.menuDocumentKey
@@ -97,11 +174,14 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
   const COL_PRICE_LIST_TYPE = env.COL_PRICE_LIST_TYPE || 'pos-priceListType';
   const COL_PRICE_LIST = env.COL_PRICE_LIST || 'pos-priceList';
   const COL_PRICE_LIST_LINE = env.COL_PRICE_LIST_LINE || 'pos-priceListLine';
+  const COL_SERVICE_POINT = env.COL_SERVICE_POINT || 'pos-servicePoint';
 
   const mongoOptions = mongoClientOptionsFromEnv(env);
 
   const now = new Date();
   const stats = {
+    unitUpserts: 0,
+    servicePointUpserts: 0,
     goodUpserts: 0,
     groupUpserts: 0,
     membershipUpserts: 0,
@@ -124,23 +204,15 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
     const colMembership = db.collection(COL_GOOD_GROUP_MEMBERSHIP);
     const colPl = db.collection(COL_PRICE_LIST);
     const colLine = db.collection(COL_PRICE_LIST_LINE);
+    const colServicePoint = db.collection(COL_SERVICE_POINT);
 
-    // --- refs: Unit, Hierarchy, priceListType
-    await colUnit.findOneAndUpdate(
-      { name: 'шт' },
-      {
-        $set: { name: 'шт', updatedAt: now },
-        $setOnInsert: {
-          createdAt: now,
-          createdBy: new ObjectId('000000000000000000000000'),
-          updatedBy: new ObjectId('000000000000000000000000'),
-        },
-      },
-      { upsert: true }
-    );
-    const unitFresh = await colUnit.findOne({ name: 'шт' });
-    if (!unitFresh) throw new Error('Failed to upsert Unit (шт)');
-    const unitId = unitFresh._id;
+    // --- refs: Unit (все GD_VALUE), servicePoint, Hierarchy, priceListType
+    const { unitObjectIdByFbId, unitUpserts } = await importAllUnits(fbDb, colUnit, now);
+    stats.unitUpserts = unitUpserts;
+    const defaultUnitId = unitObjectIdByFbId.get(DEFAULT_UNIT_FB_ID);
+
+    const servicePointRef = await importRestaurantServicePoint(fbDb, colServicePoint, now);
+    stats.servicePointUpserts = 1;
 
     await colHierarchy.findOneAndUpdate(
       { code: 'menu' },
@@ -242,7 +314,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
     const goodsById = new Map();
     if (goodIdListSql) {
       const goodSql = `
-        SELECT g.ID, g.NAME, g.ALIAS, g.BARCODE, g.GROUPKEY, g.ISASSEMBLY,
+        SELECT g.ID, g.NAME, g.ALIAS, g.BARCODE, g.GROUPKEY, g.VALUEKEY, g.ISASSEMBLY,
                g.USR$BEDIVIDE, g.USR$GTIN, g.DISABLED
         FROM GD_GOOD g
         WHERE g.ID IN (${goodIdListSql})
@@ -426,6 +498,13 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
       const alias = g.ALIAS != null ? String(g.ALIAS).trim().slice(0, 16) : '';
       const barcode = g.BARCODE != null && String(g.BARCODE).trim() !== '' ? String(g.BARCODE).trim() : undefined;
 
+      const valueKey = g.VALUEKEY != null ? Number(g.VALUEKEY) : DEFAULT_UNIT_FB_ID;
+      let unitIdForGood = unitObjectIdByFbId.get(valueKey);
+      if (!unitIdForGood) {
+        stats.warnings.push(`Good ${gid}: VALUEKEY ${valueKey} not in GD_VALUE — using default unit`);
+        unitIdForGood = defaultUnitId;
+      }
+
       await colGood.findOneAndUpdate(
         { internalCode },
         {
@@ -433,7 +512,7 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
             name: String(g.NAME || `Товар ${gid}`),
             ...(alias ? { alias } : {}),
             ...(barcode ? { barcode } : {}),
-            unitId,
+            unitId: unitIdForGood,
             isAssembly: bool01(g.ISASSEMBLY),
             // В этой схеме признак дробного/весового товара не используем (всегда 0)
             isFractional: false,
@@ -555,6 +634,8 @@ async function runImport({ menuDocumentKey, overrides = {} }) {
     return {
       ok: true,
       menuDocumentKey: menuKey,
+      servicePointId: String(servicePointRef.servicePointId),
+      servicePointInternalCode: servicePointRef.internalCode,
       priceListId: String(priceListId),
       priceListName,
       priceListInternalCode,
